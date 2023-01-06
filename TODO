@@ -1,0 +1,15 @@
+I want to make this run on the open problems data first.
+
+Then, I can make it work with larger atlases, like: 
+atac-seq https://doi-org.proxy.library.vanderbilt.edu/10.1016/j.cell.2021.10.024
+
+1. Move and rename open problems data here
+2. Input data prep -
+    a. check that the graph is connected
+    b. check that atac is connected to rest of graph
+    c. check degree distribution
+    d. betweeness
+3. Setup architecture
+    a. One neural net per node
+
+
