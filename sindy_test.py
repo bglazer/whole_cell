@@ -16,8 +16,8 @@ num_nodes = graph.number_of_nodes()
 for i in range(states.shape[0]):
     target = states[[i]]
     # Randomly sample points near the fixed points
-    samples = target + torch.randn(num_nodes)/10
-    trace = model(samples, trace=True)
+    samples = torch.abs(target + torch.randn(num_nodes)/5)
+    trace = model(samples, return_trace=True)
     print(len(trace))
     print(trace[-1][:,:5].detach().numpy())
     print(target[:,:5].detach().numpy())

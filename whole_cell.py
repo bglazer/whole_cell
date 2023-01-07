@@ -37,12 +37,13 @@ class WholeCell(torch.nn.Module):
         
 
     # TODO implement accelerated convergence method
-    def forward(self, state, trace=False):
+    def forward(self, state, threshold=1e-6, return_trace=False, return_eps=False):
         eps = float('inf')
         new_state = torch.zeros_like(state)
-        if trace:
+        eps_trace = []
+        if return_trace:
             trace = [state]
-        while eps > 1e-4:
+        while threshold < eps:
             for node, mlp in self.mlps.items():
                 # Tensor of states of inputs to the node
                 inputs = list(self.graph.predecessors(node))
@@ -52,10 +53,20 @@ class WholeCell(torch.nn.Module):
             if trace:
                 trace.append(new_state)
             eps = torch.linalg.norm(new_state - state)
+            eps_trace.append(eps)
+            # breakpoint()
             state = new_state
 
-        if trace:
-            return trace
+        # convert trace from a list of tensors to a tensor
+        trace = torch.stack(trace)
+        # convert eps_trace from a list of tensors to a tensor
+        eps_trace = torch.stack(eps_trace)
 
+        if return_trace:
+            if return_eps:
+                return trace, eps_trace
+            return trace
+        if return_eps:
+            return new_state, eps_trace
         return state
 
