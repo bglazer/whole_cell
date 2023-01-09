@@ -37,7 +37,7 @@ class WholeCell(torch.nn.Module):
         
 
     # TODO implement accelerated convergence method
-    def forward(self, state, threshold=1e-6, return_trace=False, return_eps=False):
+    def forward(self, state, h, threshold=1e-6, return_trace=False, return_eps=False):
         eps = float('inf')
         new_state = torch.zeros_like(state)
         eps_trace = []
@@ -49,7 +49,7 @@ class WholeCell(torch.nn.Module):
                 inputs = list(self.graph.predecessors(node))
                 input_tensor = state[:,inputs]
                 node_idx = self.node_mapping[node]
-                new_state[:,node_idx] = mlp(input_tensor).squeeze()
+                new_state[:,node_idx] = state + h*mlp(input_tensor).squeeze()
             if trace:
                 trace.append(new_state)
             eps = torch.linalg.norm(new_state - state)

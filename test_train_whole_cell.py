@@ -1,29 +1,72 @@
+#%%
 import networkx as nx
 from torch.nn import Linear, Sequential, ReLU, LeakyReLU
 import torch
 import pickle
 from whole_cell import WholeCell
-from random_function import random_function
+from random_function import random_system, print_system, f_pow
 
+#%%
 num_nodes = 10
-graph = nx.erdos_renyi_graph(num_nodes, 0.2, directed=True)
+max_terms = 3
+library = [f_pow(1), f_pow(0), torch.sin, torch.cos, f_pow(2)]
+system, terms = random_system(num_nodes, library, krange=1/10, max_terms=3, self_deg=True)
+print_system(terms)
+
+graph = nx.DiGraph()
+for i, eqn in enumerate(terms):
+    for j, term in enumerate(eqn):
+        if term is not None:
+            graph.add_edge(j, i, term=term)    
+
 pickle.dump(graph, open('test_graph.pkl','wb'))
-model = WholeCell(graph)
-noise = torch.rand(100, 3, graph.number_of_nodes())
-centers = torch.rand(3, graph.number_of_nodes())
-states = (centers + noise).view(-1, num_nodes)
-torch.save(states, 'test_states.torch')
+nstarts = 3
+starts = torch.rand(nstarts, num_nodes)
+h = 0.1
+maxsteps = 15000
+eps = 1e-6
+runs = []
+for i, start in enumerate(starts):
+    print(i)
+    run = torch.zeros(maxsteps, num_nodes)
+    x = start
+    for j in range(maxsteps):
+        # Euler step
+        u = system(x)
+        du = torch.max(torch.abs(h*u))
+        if du < eps:
+            print('converged')
+            print(x)
+            runs.append(run[:j])
+            break
+        x = x + h*u
+        run[j] = x
+
+# breakpoint()
+# for run in runs: print(run[-1])
+# from matplotlib import pyplot as plt
+# for i in range(num_nodes):
+#     plt.plot(run[:,i])
+# plt.show()
+
+#%%
+#centers = torch.rand(3, graph.number_of_nodes())
+#states = (centers + noise).view(-1, num_nodes)
+#torch.save(states, 'test_states.torch')
 type_mask = [torch.rand(1) > 0.5 for _ in range(num_nodes)]
 torch.save(type_mask, 'test_type_mask.torch')
+
+model = WholeCell(graph)
 optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
 loss_fn = torch.nn.MSELoss(reduction='sum')
 
+
+# Start at a random position, with some nodes masked, run until fixed point 
+# then compute loss against the nearest data point?
+
 n_epoch = 5000
 step_penalty = 1
-
-fs = [random_function() for _ in range(num_nodes)]
-
-
+                                            
 def loss(states, type_mask):
     # Assign random values to the states of the masked nodes
     masked_state = states.clone()
@@ -53,3 +96,4 @@ for i in range(n_epoch):
 
 torch.save(model.state_dict(), 'simple_model.torch')
 # breakpoint()
+# %%
