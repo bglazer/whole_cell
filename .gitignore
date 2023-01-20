@@ -2,4 +2,6 @@ input/
 *pkl
 *pyc
 *pyo
-*torch
+*.torch
+tmp/
+figures/test
