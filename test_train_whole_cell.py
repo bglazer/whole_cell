@@ -79,16 +79,17 @@ dpt(adata)
 
 
 #%%
+# TODO this generating weird values for the neighbors 
 # Get the nearest neighbors that have a larger pseudo-time for each point
 transition_points = []
-for i in range(len(adata.X)):
+for i in range(len(sampled)):
     # Sparse matrix row for the current point
     row=adata.obsp['distances'][i]
     # indexes of non-zero entries in the sparse matrix row
     nonzeros = row.nonzero()[1]
     neighbor_pseudotimes = adata.obs['dpt_pseudotime'][nonzeros]
     current_pseudotime = adata.obs['dpt_pseudotime'][i]
-    larger_pseudotimes = neighbor_pseudotimes > current_pseudotime
+    larger_pseudotimes = neighbor_pseudotimes < current_pseudotime
     if sum(larger_pseudotimes) == 0:
         transition_points.append(sampled[i])
     else:
@@ -102,8 +103,16 @@ min_transition_points = torch.vstack(transition_points)
 # mean_transition_points = torch.vstack([torch.mean(sampled[points], dim=0) for points in transition_points])
 
 #%%
+# Plot the vectors from the sampled points to the transition points
+d = min_transition_points - sampled
+# Increase the size of the plot to see the vectors
+plt.figure(figsize=(30,30))
 # Plot the data with the pseudo-time as color
-plt.scatter(adata.X[:,0], adata.X[:,1], c=adata.obs['dpt_pseudotime'], s=.1)
+plt.scatter(adata.X[:,0], adata.X[:,1], c=adata.obs['dpt_pseudotime'], s=5)
+
+for i in range(0, len(d), 10):
+    plt.arrow(sampled[i,0], sampled[i,1], d[i,0], d[i,1], color='r', alpha=1)
+    
 
 #%%
 model = WholeCell(input_dim=num_nodes, 
@@ -130,10 +139,13 @@ for i in range(n_epoch):
     # Full set of points
     idxs = torch.arange(sampled.shape[0])
     starts = sampled[idxs]
-    _, fx = model(starts)
-    mean_next_points = mean_transition_points[idxs]
+    _, fx = model(starts, tspan=torch.linspace(0,1,2))
+    # fx = model.model(starts)
+    min_next_points = min_transition_points[idxs]
     # TODO mmd doesn't really make sense if we don't have stochasticity in the model
-    loss = mse(fx[-1], mean_next_points)
+    # mse might not make sense either
+    loss = 1000*mse(fx[-1], min_next_points)
+    # loss = mse(fx, min_next_points)
     loss.backward()
     optimizer.step()
     

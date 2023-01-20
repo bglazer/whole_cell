@@ -20,9 +20,9 @@ class WholeCell(torch.nn.Module):
         self.model = MLP(input_dim, output_dim, hidden_dim, num_layers)
         self.neural_ode = NeuralODE(self.model, sensitivity='adjoint')  
 
-    def forward(self, state):
+    def forward(self, state, tspan):
         # state is a tensor of shape (num_nodes, num_states)
-        delta = self.neural_ode(state)
+        delta = self.neural_ode(state, tspan)
         return delta
 
     def trajectory(self, state, tspan):
