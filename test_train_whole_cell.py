@@ -64,7 +64,7 @@ import scanpy as sc
 import numpy as np
 adata = AnnData(sampled.detach().numpy())
 print('Computing neighbors')
-n_neighbors = 10
+n_neighbors = 30
 neighbors(adata, n_neighbors=n_neighbors)
 print('Computing leiden clusters')
 leiden(adata)
@@ -80,6 +80,7 @@ dpt(adata)
 
 
 #%%
+# TODO This procedure still sometimes give weird values for the inferred flow field
 # Get the nearest neighbors that have a larger pseudo-time for each point
 transition_points = []
 for i in range(len(sampled)):
@@ -89,28 +90,30 @@ for i in range(len(sampled)):
     nonzeros = row.nonzero()[1]
     neighbor_pseudotimes = adata.obs['dpt_pseudotime'][nonzeros]
     current_pseudotime = adata.obs['dpt_pseudotime'][i]
-    larger_pseudotimes = neighbor_pseudotimes < current_pseudotime
+    larger_pseudotimes = neighbor_pseudotimes > current_pseudotime
     # Check if both points are in the same cluster
     same_cluster = adata.obs['leiden'][i] == adata.obs['leiden'][nonzeros[larger_pseudotimes]]
     # Check if their clusters are connected in the paga graph
     # TODO TODO TODO
-    idxs = np.flatnonzero(same_cluster & larger_pseudotimes)
+    idxs = np.flatnonzero(larger_pseudotimes & same_cluster)
 
     if sum(idxs) == 0:
         transition_points.append(sampled[i])
     else:
         next_points = nonzeros[idxs]
+        # TODO use the mean of the transition points instead of the min
         mean_transition_point = torch.mean(sampled[next_points], dim=0)
         min_dist_nonzero_idx = adata.obsp['distances'][i, next_points].argmin()
         min_dist_idx = next_points[min_dist_nonzero_idx]
         min_dist_point = sampled[min_dist_idx]
+        # transition_points.append(mean_transition_point)
         transition_points.append(min_dist_point)
 
 min_transition_points = torch.vstack(transition_points)
 # mean_transition_points = torch.vstack([torch.mean(sampled[points], dim=0) for points in transition_points])
 
 #%%
-def plot_arrows(start_points, next_points, sample_factor=10, save_file=None):
+def plot_arrows(start_points, next_points, predictions=None, sample_factor=10, save_file=None):
     # Plot the vectors from the sampled points to the transition points
     d = next_points - start_points
     # Increase the size of the plot to see the vectors
@@ -119,14 +122,32 @@ def plot_arrows(start_points, next_points, sample_factor=10, save_file=None):
     # TODO: depends on global context
     #plt.scatter(adata.X[:,0], adata.X[:,1], c=adata.obs['dpt_pseudotime'], s=5)
     
+    if predictions is not None:
+        dp = predictions - start_points
+        plt.arrow(start_points[i,0], start_points[i,1], dp[i,0], dp[i,1], color='g', alpha=1, width=0.05)
+
     for i in range(0, len(d), sample_factor):
         plt.arrow(start_points[i,0], start_points[i,1], d[i,0], d[i,1], color='r', alpha=1)
 
     if save_file is not None:
         plt.savefig(save_file)
-        plt.close()
 
-plot_arrows(sampled.detach().cpu(), min_transition_points.detach().cpu())
+plot_arrows(sampled.detach().cpu(), min_transition_points.detach().cpu(), sample_factor=1)
+
+#%%
+def plot_traces(model, trace_starts, i, n_traces=50):
+    # Generate some sample traces
+    traces = model.trajectory(state=trace_starts, tspan=torch.linspace(0, 100, 500))
+    trace_plot = traces.cpu().detach().numpy()
+    # Create a new figure
+    fig, ax = plt.subplots()
+    # Plot the data with partial transparency so that we can highlight the traces
+    ax.scatter(data[:,0], data[:,1], s=.25, alpha=0.1)
+    for trace in range(n_traces):
+        # Plot the traces
+        ax.scatter(trace_plot[:,trace,0], trace_plot[:,trace,1], s=1)
+    # Save the plot to a file indicating the epoch
+    plt.savefig(f'figures/test/traces_{i}.png')
 
 #%%
 device = 'cuda:0'
@@ -143,8 +164,9 @@ mse = torch.nn.MSELoss(reduction='mean')
 n_epoch = 10000
 n_points = 1000
 n_traces = 50
+trace_starts = sampled[torch.randint(0, sampled.shape[0], (n_traces,))]
 n_samples = 10
-  
+
 #%%
 for i in range(n_epoch):
     optimizer.zero_grad()
@@ -168,29 +190,12 @@ for i in range(n_epoch):
     if i % 100 == 0:
         plot_arrows(sampled.detach().cpu(), 
                     fx[-1].detach().cpu(),
+                    min_next_points.detach().cpu(),
                     sample_factor=10,
                     save_file=f'figures/test/vector_field_{i}.png')
     if i%1000 == 0:
-        plot_traces(model, sampled, i, n_traces=100)
+        plot_traces(model, trace_starts, i, n_traces=100)
+        torch.save(model.state_dict(), 'simple_model.torch')
 
-#%%
-def plot_traces(model, sampled, i, n_traces=50):
-    # Generate some sample traces
-    trace_starts = sampled[torch.randint(0, sampled.shape[0], (n_traces,))]
-    traces = model.trajectory(state=trace_starts, tspan=torch.linspace(0, 100, 500))
-    trace_plot = traces.cpu().detach().numpy()
-    # Create a new figure
-    fig, ax = plt.subplots()
-    # Plot the data with partial transparency so that we can highlight the traces
-    ax.scatter(data[:,0], data[:,1], s=.25, alpha=0.1)
-    for trace in range(n_traces):
-        # Plot the traces
-        ax.scatter(trace_plot[:,trace,0], trace_plot[:,trace,1], s=1)
-    # Save the plot to a file indicating the epoch
-    plt.savefig(f'figures/test/traces_{i}.png')
     plt.close()
-
-
-
-torch.save(model.state_dict(), 'simple_model.torch')
 # %%
