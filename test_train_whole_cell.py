@@ -79,7 +79,7 @@ dpt(adata)
 #%%
 # TODO This procedure still sometimes give weird values for the inferred flow field
 # Get the nearest neighbors that have a larger pseudo-time for each point
-transition_sigma = 1e-4
+transition_sigma = 1e-1
 transition_points = []
 for i in range(len(sampled)):
     # Sparse matrix row for the current point
@@ -96,32 +96,22 @@ for i in range(len(sampled)):
     idxs = np.flatnonzero(larger_pseudotimes) # & same_cluster)
     nidxs = np.flatnonzero(~larger_pseudotimes)
 
-    # if sum(idxs) == 0:
-    #     pass
-    #     # transition_points.append(sampled[i])
-    # else:
-    next_points = nonzeros[idxs]
-    # Difference between psuedo-time of the current point and the next point
-    diff = neighbor_pseudotimes[idxs] - current_pseudotime
-    # Convolve with a gaussian to get a probability distribution
-    ps = scipy.stats.norm.pdf(diff, scale=transition_sigma)
-    # Normalize the distribution
-    ps = torch.tensor(ps / np.sum(ps))
+    if sum(idxs) == 0:
+        transition_points.append(sampled[i])
+    else:
+        next_points = nonzeros[idxs]
+        # Difference between psuedo-time of the current point and the next point
+        diff = neighbor_pseudotimes[idxs] - current_pseudotime
+        # Convolve with a gaussian to get a probability distribution
+        ps = scipy.stats.norm.pdf(diff, scale=transition_sigma)
+        # Normalize the distribution
+        ps = torch.tensor(ps / np.sum(ps))
 
-    nnext_points = nonzeros[nidxs]
-    # Difference between psuedo-time of the current point and the next point
-    ndiff = neighbor_pseudotimes[nidxs] - current_pseudotime
-    # Convolve with a gaussian to get a probability distribution
-    nps = scipy.stats.norm.pdf(ndiff, scale=transition_sigma)
-    # Normalize the distribution
-    nps = -torch.tensor(nps / np.sum(nps))
-    
-    # Weight the next points by the probability distribution
-    weighted_points = ps[:,None] * sampled[next_points]
-    nweighted_points = nps[:,None] * sampled[nnext_points]
-    # Take the mean of the weighted points
-    mean_point = torch.sum(torch.vstack([weighted_points, nweighted_points]), dim=0)
-    transition_points.append(mean_point)        
+        # Weight the next points by the probability distribution
+        weighted_points = ps[:,None] * sampled[next_points]
+        # Take the mean of the weighted points
+        mean_point = torch.sum(weighted_points, dim=0)
+        transition_points.append(mean_point)        
 
 min_transition_points = torch.vstack(transition_points)
 # mean_transition_points = torch.vstack([torch.mean(sampled[points], dim=0) for points in transition_points])
