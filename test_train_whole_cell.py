@@ -4,6 +4,7 @@ from scipy.spatial import KDTree
 from whole_cell import WholeCell
 from random_function import random_system, print_system, f_pow
 from matplotlib import pyplot as plt
+import scipy
 
 #%%
 num_nodes = 2
@@ -51,10 +52,6 @@ for i in range(nstarts):
 noise_factor = 0.1
 noisy = sampled + torch.randn(sampled.shape)*noise_factor
 
-#%%
-#plt.scatter(sampled[:,0], sampled[:,1], s=1)
-
-
 #%% 
 # Compute pseudo-time trajectories using scanpy
 from scanpy.tl import paga, leiden, dpt, diffmap
@@ -64,7 +61,7 @@ import scanpy as sc
 import numpy as np
 adata = AnnData(sampled.detach().numpy())
 print('Computing neighbors')
-n_neighbors = 30
+n_neighbors = 100
 neighbors(adata, n_neighbors=n_neighbors)
 print('Computing leiden clusters')
 leiden(adata)
@@ -82,6 +79,7 @@ dpt(adata)
 #%%
 # TODO This procedure still sometimes give weird values for the inferred flow field
 # Get the nearest neighbors that have a larger pseudo-time for each point
+transition_sigma = 1e-4
 transition_points = []
 for i in range(len(sampled)):
     # Sparse matrix row for the current point
@@ -92,22 +90,38 @@ for i in range(len(sampled)):
     current_pseudotime = adata.obs['dpt_pseudotime'][i]
     larger_pseudotimes = neighbor_pseudotimes > current_pseudotime
     # Check if both points are in the same cluster
-    same_cluster = adata.obs['leiden'][i] == adata.obs['leiden'][nonzeros[larger_pseudotimes]]
+    # same_cluster = adata.obs['leiden'][i] == adata.obs['leiden'][nonzeros[larger_pseudotimes]]
     # Check if their clusters are connected in the paga graph
     # TODO TODO TODO
-    idxs = np.flatnonzero(larger_pseudotimes & same_cluster)
+    idxs = np.flatnonzero(larger_pseudotimes) # & same_cluster)
+    nidxs = np.flatnonzero(~larger_pseudotimes)
 
-    if sum(idxs) == 0:
-        transition_points.append(sampled[i])
-    else:
-        next_points = nonzeros[idxs]
-        # TODO use the mean of the transition points instead of the min
-        mean_transition_point = torch.mean(sampled[next_points], dim=0)
-        min_dist_nonzero_idx = adata.obsp['distances'][i, next_points].argmin()
-        min_dist_idx = next_points[min_dist_nonzero_idx]
-        min_dist_point = sampled[min_dist_idx]
-        # transition_points.append(mean_transition_point)
-        transition_points.append(min_dist_point)
+    # if sum(idxs) == 0:
+    #     pass
+    #     # transition_points.append(sampled[i])
+    # else:
+    next_points = nonzeros[idxs]
+    # Difference between psuedo-time of the current point and the next point
+    diff = neighbor_pseudotimes[idxs] - current_pseudotime
+    # Convolve with a gaussian to get a probability distribution
+    ps = scipy.stats.norm.pdf(diff, scale=transition_sigma)
+    # Normalize the distribution
+    ps = torch.tensor(ps / np.sum(ps))
+
+    nnext_points = nonzeros[nidxs]
+    # Difference between psuedo-time of the current point and the next point
+    ndiff = neighbor_pseudotimes[nidxs] - current_pseudotime
+    # Convolve with a gaussian to get a probability distribution
+    nps = scipy.stats.norm.pdf(ndiff, scale=transition_sigma)
+    # Normalize the distribution
+    nps = -torch.tensor(nps / np.sum(nps))
+    
+    # Weight the next points by the probability distribution
+    weighted_points = ps[:,None] * sampled[next_points]
+    nweighted_points = nps[:,None] * sampled[nnext_points]
+    # Take the mean of the weighted points
+    mean_point = torch.sum(torch.vstack([weighted_points, nweighted_points]), dim=0)
+    transition_points.append(mean_point)        
 
 min_transition_points = torch.vstack(transition_points)
 # mean_transition_points = torch.vstack([torch.mean(sampled[points], dim=0) for points in transition_points])
@@ -133,6 +147,8 @@ def plot_arrows(start_points, next_points, predictions=None, sample_factor=10, s
         plt.savefig(save_file)
 
 plot_arrows(sampled.detach().cpu(), min_transition_points.detach().cpu(), sample_factor=1)
+plt.scatter(sampled[:,0], sampled[:,1], s=3, c=adata.obs['dpt_pseudotime'])
+
 
 #%%
 def plot_traces(model, trace_starts, i, n_traces=50):
