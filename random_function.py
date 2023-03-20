@@ -3,18 +3,23 @@ import torch
 from functools import partial
 import random
 
+# Function that outputs another function that exponentiates by a given value
 def f_pow(exp):
     f = partial(torch.pow, exponent=torch.tensor(exp))
     f.__name__ = f'pow_{exp}'
     return f
 
+# The set of functions that can be used in the system
 library = [torch.sin, torch.cos]#, f_pow(1)] #, f_pow(3)]
 
+# Generate a list of random selected terms from the library with random coefficients 
+# in the range [-krange, krange]
 def random_function(library, krange):
     term = random.choice(library)
     k = random.uniform(-krange, krange)
     return term, k
 
+# Generate a random system of equations with n_variables variables
 def random_system(n_variables, library, krange, max_terms, self_deg=True):
     terms = []
     system = []
@@ -36,6 +41,7 @@ def random_system(n_variables, library, krange, max_terms, self_deg=True):
     system = lambda xs, s=system: torch.stack([f(xs) for f in s])
     return system, terms
 
+# Pretty print the system
 def print_system(system):
     for i,eqn in enumerate(system):
         print(f'x_{i} =', '+'.join([(f'{t[0]:.2f}*{t[1].__name__}(x_{j})') 
